@@ -1,0 +1,183 @@
+---
+title: "Average weather in Dallas/Fort Worth"
+author: "Matthew Van Hala"
+date: "`r format(Sys.time(), '%B %e, %Y')`"
+knit: (function(inputFile, encoding) { 
+        rmarkdown::render(
+          inputFile,
+          encoding = encoding, 
+          output_file = file.path(
+            rprojroot::find_rstudio_root_file(), "docs",
+            paste0(tools::file_path_sans_ext(basename(inputFile)), ".html")
+          )
+        )
+      })
+output:
+  html_document:
+    code_folding: show
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    theme: united
+---
+
+```{r setup, include = FALSE}
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
+# Setup
+
+```{r}
+library(readr)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+```
+
+```{r}
+dfw_weather_raw <- read_csv(
+  "data/dfw-airport-weather.csv", 
+  na = "-9999",
+  col_types = cols(STATION = "c", STATION_NAME = "c", DATE = "c", .default = "d")
+) %>%
+  setNames(tolower(names(.)))
+```
+
+```{r}
+dfw_weather <- dfw_weather_raw %>%
+  mutate(date = as.Date(date, format = "%Y%m%d"),
+         day_of_yr = strftime(date, "%m-%d"),
+         year = year(date)) %>%
+  group_by(year) %>%
+  mutate(rain_to_date = cumsum(prcp)) %>%
+  ungroup()
+```
+
+```{r}
+dfw_averages <- dfw_weather %>%
+  filter(day_of_yr != "02-29") %>%
+  group_by(day_of_yr) %>%
+  summarise_at(
+    vars(tmax, tmin, rain_to_date, awnd, prcp),
+    funs(
+      mean = mean(., na.rm = TRUE),
+      lower = quantile(., 0.05, na.rm = TRUE, names = FALSE),
+      upper = quantile(., 0.95, na.rm = TRUE, names = FALSE)
+    )
+  ) %>%
+  mutate(day_of_yr = as.Date(paste0("2017-", day_of_yr)))
+```
+
+# Temperatures
+
+## High temperatures
+
+```{r}
+ggplot(data = dfw_averages) + 
+  theme_minimal() +
+  geom_line(aes(x = day_of_yr, y = tmax_mean), color = "red") + 
+  geom_ribbon(aes(x = day_of_yr, ymin = tmax_lower, ymax = tmax_upper), alpha = 0.2, fill = "red") +
+  theme(axis.title = element_blank(), panel.grid.minor.x = element_blank()) +
+  ggtitle("High temperatures at Dallas/Fort Worth International Airport",
+          subtitle = "Daily mean and 5% to 95% quantile band from 1948 to 2016") +
+  scale_x_date(date_breaks = "1 month", date_labels = "%b")
+```
+
+## Low temperatures
+
+```{r}
+ggplot(data = dfw_averages) + 
+  theme_minimal() +
+  geom_line(aes(x = day_of_yr, y = tmin_mean), color = "blue") + 
+  geom_ribbon(aes(x = day_of_yr, ymin = tmin_lower, ymax = tmin_upper), alpha = 0.2, fill = "blue") +
+  theme(axis.title = element_blank(), panel.grid.minor.x = element_blank()) +
+  ggtitle("Low temperatures at Dallas/Fort Worth International Airport",
+          subtitle = "Daily mean and 5% to 95% quantile band from 1948 to 2016") +
+  scale_x_date(date_breaks = "1 month", date_labels = "%b")
+```
+
+## Average daily range
+
+```{r}
+ggplot(data = dfw_averages) + 
+  theme_minimal() +
+  geom_ribbon(aes(x = day_of_yr, ymin = tmin_mean, ymax = tmax_mean), alpha = 0.6, fill = "blue") +
+  theme(axis.title = element_blank(), panel.grid.minor.x = element_blank()) +
+  ggtitle("Daily temperature range at Dallas/Fort Worth International Airport",
+          subtitle = "Using mean low and high temperatures from 1948 to 2016") +
+  scale_x_date(date_breaks = "1 month", date_labels = "%b")
+```
+
+# Average wind speed
+
+```{r}
+ggplot(data = dfw_averages) + 
+  theme_minimal() +
+  geom_line(aes(x = day_of_yr, y = awnd_mean), color = "blue") + 
+  geom_ribbon(aes(x = day_of_yr, ymin = awnd_lower, ymax = awnd_upper), alpha = 0.2, fill = "blue") +
+  theme(axis.title = element_blank(), panel.grid.minor.x = element_blank()) +
+  ggtitle("Average wind speed at Dallas/Fort Worth International Airport",
+          subtitle = "Daily mean and 5% to 95% quantile band from 1984 to 2016") +
+  scale_x_date(date_breaks = "1 month", date_labels = "%b")
+```
+
+
+# Rainfall 
+
+## Average cumulative rainfall
+
+```{r}
+ggplot(data = dfw_averages) + 
+  theme_minimal() +
+  geom_line(aes(x = day_of_yr, y = rain_to_date_mean), color = "darkgreen") +
+  geom_ribbon(aes(x = day_of_yr, ymin = rain_to_date_lower, ymax = rain_to_date_upper), 
+              alpha = 0.2, fill = "darkgreen") +
+  theme(axis.title = element_blank(), panel.grid.minor.x = element_blank()) +
+  ggtitle("Cumulative rainfall at Dallas/Fort Worth International Airport",
+          subtitle = "Daily mean and 5% to 95% quantile band from 1948 to 2016") +
+  scale_x_date(date_breaks = "1 month", date_labels = "%b")
+```
+
+## Cumulative rainfall by year
+
+```{r}
+ggplot(data = dfw_weather) + 
+  theme_minimal() +
+  geom_line(aes(x = as.Date(paste0("2017-", day_of_yr)), y = rain_to_date, group = year), alpha = 0.6) +
+  theme(axis.title = element_blank(), panel.grid.minor.x = element_blank()) +
+  ggtitle("Cumulative yearly rainfall (inches) at Dallas/Fort Worth International Airport",
+          subtitle = "From 1948 to 2016") +
+  scale_x_date(date_breaks = "1 month", date_labels = "%b")
+```
+
+## Average rainfall
+
+```{r}
+rain_avg <- dfw_averages  %>% 
+  mutate(
+    month_num = month(day_of_yr), 
+    day_num = day(day_of_yr), 
+    half_month = case_when(
+      month_num == 2 & day_num <= 14 ~ 0.25,
+      day_num <= 15 ~ 0.25,
+      TRUE ~ 0.75
+    ),
+    month_num = month_num + half_month
+  ) %>%
+  group_by(month_num) %>%
+  summarise(rain = sum(prcp_mean))
+
+ggplot(rain_avg) + 
+  theme_minimal() + 
+  ylab("Inches") +
+  theme(panel.grid.minor.x = element_blank(),
+        axis.title.x = element_blank()) +
+  geom_bar(aes(x = month_num, y = rain), stat = "identity") + 
+  scale_x_continuous(breaks = 1:12, labels = month.abb) +
+  ggtitle("Average rainfall by half-month at Dallas/Fort Worth International Airport",
+          subtitle = "From 1948 to 2016")
+```
+
+
